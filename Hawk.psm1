@@ -258,49 +258,135 @@ Function Get-AllUnifiedAuditLogEntry {
 		
     # Make sure key variables are null
     [string]$cmd = $null
-	
-    # build our search command to execute
-    $cmd = $UnifiedSearch + " -StartDate `'" + $StartDate.ToShortDateString() + "`' -EndDate `'" + $EndDate.ToShortDateString() + "`' -SessionCommand ReturnLargeSet -resultsize 1000 -sessionid " + (Get-Date -UFormat %H%M%S)
+    
+    $query_value = 2000
+    # build our initial search command to execute
+    $cmd = $UnifiedSearch + " -StartDate `'" + $StartDate + "`' -EndDate `'" + $EndDate + "`' -ResultSize 1"
     Out-LogFile ("Running Unified Audit Log Search")
     Out-Logfile $cmd
 
     # Run the initial command
     $Output = $null
-    # $Output = New-Object System.Collections.ArrayList
-    
+    $Output += (Invoke-Expression $cmd)
+
+    # If no events, we can just return
+    if ($null -eq $Output) {
+        Out-LogFile ("[WARNING] - Unified Audit log returned no results.")
+        $Run = $false
+        # Convert our list to an array and return it
+        [array]$Output = $Output
+        return $Output
+    }
+
+    # Else, we have data
+    Out-LogFile ("Retrieved:" + $Output[-1].ResultIndex.tostring().PadRight(5, " ") + " Total: " + $Output[-1].ResultCount)
+    # Sort our result set to make sure the higest number is in the last position
+    $Output = $Output | Sort-Object -Property ResultIndex
+    $recordCount = $Output[-1].ResultCount
+    $daysDifference = (New-TimeSpan -Start $StartDate -End $EndDate).Days
+
+    # Each day likely has more than 5000 records (3000 is 'safe' value to account for mean average)
+    if (([int]$recordCount / [int]$daysDifference) -lt $query_value)
+    {
+        $days = 1
+        $hours = 0
+        $minutes = 0
+    }
+
+    # Value will be greater than number of days we have logs for
+    else 
+    {
+        # Calculate interval
+        $interval = ([int]$recordCount / [int]$query_value)
+        #As a fraction of the auditable period:
+        $ratio = 90 / $interval
+        # Hours in a day
+        $hours = 24 * $ratio
+        $hours = 3.2
+    }
+
+
+    Out-LogFile("Interval set to: $hours")
+
+    # Now we begin the loop!
+        
     # Setup our run variable
     $Run = $true
 
-    # Since we have more than 1k results we need to keep returning results until we have them all
-    while ($Run) {
-        $Output += (Invoke-Expression $cmd)
+    $Output = $null
 
-        # Check for null results if so warn and stop
-        if ($null -eq $Output) {
-            Out-LogFile ("[WARNING] - Unified Audit log returned no results.")
+    while($Run)
+    {
+        Test-EXOConnection
+        $sessionID = (Get-Date -UFormat %H%M%S)
+        $cmd = $UnifiedSearch + " -StartDate `'" + $StartDate + "`' -EndDate `'" + $StartDate.AddDays($days).AddHours($hours).AddMinutes($minutes) + "`'  -ResultSize " + $query_value + " -SessionCommand ReturnLargeSet -sessionid " + $sessionId
+        Out-LogFile ("Running Unified Audit Log Search")
+        Out-LogFile ($cmd)
+        
+        if ($StartDate -gt $EndDate)
+        {
+            # Time to end :/
             $Run = $false
         }
-        # Else continue
-        else {
-            # Sort our result set to make sure the higest number is in the last position
-            $Output = $Output | Sort-Object -Property ResultIndex
+        
+        $Output += (Invoke-Expression $cmd)
+        # Sort our result set to make sure the higest number is in the last position
+        $Output = $Output | Sort-Object -Property ResultIndex
 
-            # if total result count returned is 0 then we should warn and stop
-            if ($Output[-1].ResultCount -eq 0) {
-                Out-LogFile ("[WARNING] - Returned Result count was 0")
-                $Run = $false
-            }
-            # if our resultindex = our resultcount then we have everything and should stop
-            elseif ($Output[-1].Resultindex -ge $Output[-1].ResultCount) {
-                Out-LogFile ("Retrieved all results.")
-                $Run = $false
-            }
-            
-            # Output the current progress
-            Out-LogFile ("Retrieved:" + $Output[-1].ResultIndex.tostring().PadRight(5, " ") + " Total: " + $Output[-1].ResultCount)
+        if ($null -eq $Output -or $Output[-1].ResultCount -eq 0)
+        {
+            # No logs, continue
+            Out-LogFile ("Returned Result count was 0, continuing")
+            $Output = $null
+            $StartDate = $StartDate.AddDays($days).AddHours($hours).AddMinutes($minutes)
+            continue
         }
-    }		
 
+        # Check for returned size
+        $returnedSize = $Output[-1].ResultCount
+        if ([int]$returnedSize -gt $query_value -And [int]$returnedSize -lt 50000)
+        {
+            $session = $true
+            while($session)
+            {
+                Test-EXOConnection
+                $Output += (Invoke-Expression $cmd)
+
+                if($Output[-1].ResultIndex -eq $Output[-1].ResultCount)
+                {
+                    $session = $false
+                }
+                else
+                {
+                    Out-LogFile ("Retrieved:" + $Output[-1].ResultIndex.tostring().PadRight(5, " ") + " Total: " + $Output[-1].ResultCount)
+                }
+            }
+        }
+
+        elseif ([int]$returnedSize -gt 50000)
+        {
+            Out-LogFile ("WARNING - day interval too lage")
+        }
+
+        # Output the current progress
+        Out-LogFile ("Retrieved:" + $Output[-1].ResultIndex.tostring().PadRight(5, " ") + " Total: " + $Output[-1].ResultCount)
+        # Check session is active
+        
+        
+        # Output to file, so we can clear RAM
+        # Convert output to array
+        [array]$Output = $Output
+        Foreach ($event in $Output)
+        {
+            $event.auditdata | ConvertFrom-Json | Out-MultipleFileType -fileprefix "JmaesLog" -csv -append
+        }
+
+        $Output = $null
+        $StartDate = $StartDate.AddDays($days).AddHours($hours).AddMinutes($minutes)
+
+    }	
+
+    Out-LogFile ("Retrieved all results.")
     # Convert our list to an array and return it
     [array]$Output = $Output
     return $Output
@@ -631,35 +717,7 @@ Function Out-MultipleFileType {
         if ($null -eq $AllObject) {
             Out-LogFile "No Data Found"
         }
-        else {
-			
-            # Determine what file type or types we need to write this object into and output it
-            # Output XML File
-            if ($xml -eq $true) {
-                # lets put the xml files in a seperate directory to not clutter things up
-                $xmlpath = Join-path $Path XML
-                if (Test-path $xmlPath) { }
-                else {
-                    Out-LogFile ("Making output directory for xml files " + $xmlPath)
-                    $null = New-Item $xmlPath -ItemType Directory
-                }
-
-                # Build the file name and write it out
-                if ($UserOutput) {
-                    $filename = Join-Path $xmlpath ($FilePrefix + "_" + $ShortUser + ".xml")                    
-                }
-                else {
-                    $filename = Join-Path $xmlPath ($FilePrefix + ".xml")
-                }
-                Out-LogFile ("Writing Data to " + $filename)
-
-                # Output our objects to clixml
-                $AllObject | Export-Clixml $filename
-
-                # If notice is set we need to write the file name to _Investigate.txt
-                if ($Notice) { Out-LogFile -string ($filename) -silentnotice }
-            }
-			
+        else {			
             # Output CSV file
             if ($csv -eq $true) {
                 # Build the file name
@@ -672,11 +730,9 @@ Function Out-MultipleFileType {
 				
                 # If we have -append then append the data
                 if ($append) {
-
-                    Out-LogFile ("Appending Data to " + $filename)
-					
+				
                     # Write it out to csv making sture to append
-                    $AllObject | Export-Csv $filename -NoTypeInformation -Append
+                    $AllObject | Export-Csv $filename -NoTypeInformation -Append -Force
                 }
 				
                 # Otherwise overwrite
@@ -687,32 +743,6 @@ Function Out-MultipleFileType {
 
                 # If notice is set we need to write the file name to _Investigate.txt
                 if ($Notice) { Out-LogFile -string ($filename) -silentnotice }
-            }
-			
-            # Output Text files
-            if ($txt -eq $true) {
-                # Build the file name
-                if ($UserOutput) {
-                    $filename = Join-Path $Path ($FilePrefix + "_" + $ShortUser + ".txt")
-                }
-                else {
-                    $filename = Join-Path $Path ($FilePrefix + ".txt")
-                }              
-				
-                # If we have -append then append the data
-                if ($Append) {
-                    Out-LogFile ("Appending Data to " + $filename)
-                    $AllObject | Format-List * | Out-File $filename -Append	
-                }
-				
-                # Otherwise overwrite
-                else {
-                    Out-LogFile ("Writing Data to " + $filename)
-                    $AllObject | Format-List * | Out-File $filename
-                }
-
-                # If notice is set we need to write the file name to _Investigate.txt
-                if ($Notice) { Out-LogFile -string ($filename) -silentnotice }	
             }
         }
     }

@@ -40,3 +40,162 @@ You'll immediately be asked to authenticate into your Office365 tenant, and a 90
 | -Lookback  | If you don't want to use dates, simply enter a number indicating the days you want to look back on, starting from today, e.g., a value of 10 will start collection from midnight 10 days ago. This option will take priority if StartDate or EndDate is specified. |
 | -FilePath  | The path to where **JustGiveMeAuditLogsPlease** will store your collected audit data and its log. |
 
+## What do I do with returned JSON data?
+
+Unlike Hawk, **JustGiveMeAuditLogsPlease** returns data in the full JSON schema used by Microsoft. This is because there is value in collecting the full breadth of information offered, but also because trying to transform so many different schemas into a unified CSV would be detrimental your analysis.
+
+Instead, this being the modern world, I would recommend using Logstash to ingest your data into Elasticsearch. You can even use one of my templates:
+
+```
+input
+{
+    file
+    {
+        path => "/home/srm/UnifiedAuditLog.txt"
+        start_position => "beginning"
+        sincedb_path => "/dev/null"
+        mode => "read"
+    }
+}
+
+filter
+{
+    json
+    {
+        source => "message"
+    }
+
+    mutate
+    {
+        remove_field => ["message"]
+    }
+
+    date
+    {
+        match => ["CreationTime", "ISO8601"]
+    }
+
+    if [ActorIpAddress] and [ActorIpAddress] != ""
+    {
+        geoip
+        {
+            source => "ActorIpAddress"
+            fields => ["city_name", "country_code2", "country_name", "latitude", "longitude"]
+            target => "ActorIP-Location"
+        }
+
+        mutate
+        {
+            rename =>
+            {
+                "[ActorIP-Location][latitude]" => "[ActorIP-Location][geo][lat]"
+                "[ActorIP-Location][longitude]" => "[ActorIP-Location][geo][lon]"                
+            }
+        }
+
+    }
+
+    if [ClientIP] and [ClientIP] != ""
+    {
+        geoip
+        {
+            source => "ClientIP"
+            fields => ["city_name", "country_code2", "country_name", "latitude", "longitude"]
+            target => "ClientIP-Location"
+        }
+
+        mutate
+        {
+            rename =>
+            {
+                "[ClientIP-Location][latitude]" => "[ClientIP-Location][geo][lat]"
+                "[ClientIP-Location][longitude]" => "[ClientIP-Location][geo][lon]"                
+            }
+        }
+    }
+
+    if [ActorIpAddress] and [ActorIpAddress] != ""
+    { 
+
+    }
+
+    else 
+    {
+        mutate
+        {
+            remove_field => ["ActorIpAddress"] 
+        }   
+    }
+    
+    if [ClientIP] and [ClientIP] != ""
+    {
+        
+    }
+    
+    else
+    {
+        mutate
+        {
+            remove_field => ["ClientIP"]
+        }    
+    }
+
+}
+
+output
+{
+    elasticsearch
+    {
+        hosts => "{elastisearch-node}"
+        index => "logs-office365-unifiedaudit"
+    }
+
+}
+```
+
+If you want to get really serious, you may also want to specify an Index Template:
+
+```
+  "mappings": {
+    "ActorIPAddress-Location": {
+      "_source": {
+        "excludes": [],
+        "includes": [],
+        "enabled": true
+      },
+      "_meta": {},
+      "_routing": {
+        "required": false
+      },
+      "dynamic": true,
+      "numeric_detection": false,
+      "date_detection": false,
+      "dynamic_templates": [],
+      "properties": {
+        "@timestamp": {
+          "type": "date"
+        },
+        "ActorIP-Location": {
+          "type": "object",
+          "properties": {
+            "geo": {
+              "type": "geo_point"
+            }
+          }
+        },
+        "ClientIP-Location": {
+          "type": "object",
+          "properties": {
+            "geo": {
+              "type": "geo_point"
+            }
+          }
+        },
+        "CreationTime": {
+          "type": "date"
+        }
+      }
+    }
+  }
+```
+

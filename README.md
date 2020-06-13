@@ -94,6 +94,14 @@ filter
         }
 
     }
+    
+    else
+    {
+        mutate
+        {
+            remove_field => ["ActorIpAddress"]
+        }   
+    }
 
     if [ClientIP] and [ClientIP] != ""
     {
@@ -113,33 +121,14 @@ filter
             }
         }
     }
-
-    if [ActorIpAddress] and [ActorIpAddress] != ""
-    { 
-
-    }
-
-    else 
-    {
-        mutate
-        {
-            remove_field => ["ActorIpAddress"] 
-        }   
-    }
-    
-    if [ClientIP] and [ClientIP] != ""
-    {
-        
-    }
     
     else
     {
         mutate
         {
-            remove_field => ["ClientIP"]
-        }    
+            remove_field => ["ActorIpAddress"]
+        }   
     }
-
 }
 
 output

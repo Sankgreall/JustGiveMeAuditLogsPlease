@@ -1,66 +1,42 @@
-# HAWK + Github
+# JustGiveMeAuditLogsPlease
 
-## Who can contribute:
-Everyone is welcome to contribute to this tool.  The goal of the Hawk tool is to be a community lead tool and provides
-security support professionals with the tools they need to quickly and easily gather data from O365.
+For years, incident responders have looked up at the sky and dreamed of a world where pulling Office365 audit logs would be simple and efficient. Microsoft have really tried to make it difficult, but **JustGiveMeAuditLogsPlease** finally makes a seamless tenant-wide collection of the Unified Audit Logs possible.
 
-## What Hawk is and isn't
-Hawk provides Limited analysis of the gathered data.  This is by design!
-Hawk is here to help get all of the data in a single place it is not designed to make any significant
-conclusions about this data.  This is intentional since it is impossible for the tool to know enough about
-your environment or what you are concerned about to make a legitimate analysis of the data.
+## Is this just Hawk?
 
-Hawk's goal is to quickly get you the data that is needed to come to a conclusion; not to make the conclusion for you.
+This is a fork of [Hawk](https://github.com/Canthv0/hawk), but it has been stripped down, re-designed, and massively optimised to do one thing: pull audit logs.
 
-## How can I contribute:
-Please post any issues you find to the Issue section.
-Pull requests are also VERY welcome.
+An amazing amount of credit still goes to Hawk's creators, and it remains a fantastic tool. However, it had severe limitations when dealing with audit logs, including:
 
-My goal is to review any new issues / pull requests every Wednesday.
-Most check-ins should also occur on that day.
+- Collected data was stored in-memory until the end. The slightest error would destroy information that had taken hours to collect. 
+- It was beholden to Microsoft's 50,000 record limit, making it useless for an entire tenant-wide collection.
+- Record data was transformed into structured CSV, removing critical contextual information.
+- EXO tokens would routinely expire mid-collection, leading to a fatal error (causing data loss).
 
-If something is critical or I seem to have not done anything in some time please feel free to send an email to the 
-Hawk support alias hawk_feedback@microsoft.com.
+In contract, **JustGiveMeAuditLogsPlease** has been designed by incident responders for incident responders. It features:
 
+- Collection for more than 50,000 records. This is achieved by opting for a collection model that dynamically allocates chunks of time prior to calling `Search-UnifiedAuditLog`.
+- No more interactive prompts. Just detail your `FilePath`parameter and press `Enter` for an immediate tenant-wide collection.
+- If there are fatal errors (which are very rare), it's simple to resume right from where you left off thanks to `StartDate` and `EndDate` command line parameters that are now accurate down to the second (Hawk would automatically round this to midnight, leading to duplication and wasted time). 
+- On-the-fly renewal for EXO tokens, meaning no more token expiry mid-collection.
+- Replacement of `Out-File` in favour of `StreamWriter`, shaving hours off the time it would have otherwise taken to write collected records to disk.
+- Creative handling of some very strange errors unique to the `Search-UnifiedAuditLog` API. **JustGiveMeAuditLogsPlease** drastically increases your chances of success over running that command natively.
 
-# HAWK
-Powershell Based tool for gathering information related to O365 intrusions and potential Breaches
+## How to use
 
-## PURPOSE:
-The Hawk module has been designed to ease the burden on O365 administrators who are performing 
-a forensic analysis in their organization.
+To run **JustGiveMeAuditLogsPlease**, clone this repository and run the following commands in PowerShell:
 
-It does NOT take the place of a human reviewing the data generated and is simply here to make
-data gathering easier.
+``` powershell
+ Import-Module -Name "{path}\Hawk.psd1"
+ Get-HawkTenantAzureAuditLog -FilePath "{path}"
+```
 
-## HOW TO USE:
-Hawk is divided into two primary forms of cmdlets; user based Cmdlets and Tenant based cmdlets.
+You'll immediately be asked to authenticate into your Office365 tenant, and a 90-day collection will begin automatically. Here is some information on parameters you can use with the `Get-HawkTenanyAzureAuditLog` command:
 
-User based cmdlets take the form Verb-HawkUser<action>.  They all expect a -user switch and 
-will retrieve information specific to the user that is specified.  Tenant based cmdlets take
-the form Verb-HawkTenant<Action>.  They don't need any switches and will return information
-about the whole tenant.
+| Parameter  | Description                                                  |
+| ---------- | ------------------------------------------------------------ |
+| -StartDate | A string containing the date that you would like to start collection from, e.g., '01/23/2020 05:34:33' or '05/02/2020'. Please remember to use American date styles (dd/MM/yyyy).<br /><br />If, for whatever reason, **JustGiveMeAuditLogsPlease** stops during a collection and you would like to resume it, simply configure the StartDate to the last time period it started collecting records from. If you haven't changed your FilePath, data will just be appended to your previous collection attempt. <br /><br />If you don't specify the EndDate parameter, then the EndDate will automatically be set to the current day. |
+| -EndDate   | A string containing the date that you would like to end collection, e.g., '01/23/2020 05:34:33' or '05/02/2020'. Please remember to use American date styles (dd/MM/yyyy). |
+| -Lookback  | If you don't want to use dates, simply enter a number indicating the days you want to look back on, starting from today, e.g., a value of 10 will start collection from midnight 10 days ago. This option will take priority if StartDate or EndDate is specified. |
+| -FilePath  | The path to where **JustGiveMeAuditLogsPlease** will store your collected audit data and its log. |
 
-A good starting place is the Start-HawkTenantInvestigation this will run all the tenant based
-cmdlets and provide a collection of data to start with.  Once this data has been reviewed
-if there are specific user(s) that more information should be gathered on 
-Start-HawkUserInvestigation will gather all the User specific information for a single user.
-
-All Hawk cmdlets include help that provides an overview of the data they gather and a listing
-of all possible output files.  Run Get-Help <cmdlet> -full to see the full help output for a 
-given Hawk cmdlet.
-
-Some of the Hawk cmdlets will flag results that should be further reviewed.  These will appear
-in _Investigate files.  These are NOT indicative of unwanted activity but are simply things 
-that should reviewed.
-
-## Disclaimer
-Hawk is NOT an official MICROSOFT tool.  Therefore use of the tool is covered exclusively by the license associated with this github repository.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.

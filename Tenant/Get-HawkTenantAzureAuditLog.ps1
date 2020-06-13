@@ -1,5 +1,15 @@
 
-Function Get-HawkTenantAzureAuditLog {
+Function Get-HawkTenantAzureAuditLog
+{
+
+    Param 
+    ( 
+        [string]$StartDate="",
+		[string]$EndDate="",
+		[int]$Lookback=0,
+		[string]$FilePath,
+		[string[]]$Records=$null
+    )
 	
 	<#
  
@@ -9,13 +19,6 @@ Function Get-HawkTenantAzureAuditLog {
 	.DESCRIPTION
 	Runs all Hawk Basic tenant related cmdlets and gathers the data.
 
-	Cmdlet									Information Gathered
-	-------------------------				-------------------------
-	Get-HawkTenantConfigurationn			Basic Tenant information
-	Get-HawkTenantEDiscoveryConfiguration	Looks for changes to ediscovery configuration
-	Search-HawkTenantEXOAuditLog			Searches the EXO audit log for activity
-	Get-HawkTenantRBACChanges				Looks for changes to Roles Based Access Control
-	
 	.OUTPUTS
 	See help from individual cmdlets for output list.
 	All outputs are placed in the $Hawk.FilePath directory
@@ -27,44 +30,142 @@ Function Get-HawkTenantAzureAuditLog {
 	
 	#>
 
-	Test-EXOConnection
-	Send-AIEvent -Event "CmdRun"
+	Remove-Variable -Name Hawk -ErrorAction Ignore
+
+	if ($null -eq $FilePath)
+	{
+		Write-Host "Please specifiy the -FilePath parameter."
+		return
+	}
+
+	# If nothing has been set, use Lookback
+	if ($StartDate -eq "" -And $Lookback -eq 0)
+	{
+		$Lookback = 90
+	}
+
+	if ($null -ne $Lookback -And $Lookback -gt 0)
+	{
+		Initialize-HawkGlobalObject -Lookback $Lookback -FilePath $FilePath
+	}
+	elseif ($null -ne $StartDate)
+	{
+		Initialize-HawkGlobalObject -StartDate $StartDate -EndDate $EndDate -FilePath $FilePath
+	}
+	else
+	{
+		Write-Host "Please specifiy either -StartDate and -EndDate or the -Lookback paramter."
+		return
+	}
 	
 	# Make sure our variables are null
 	$AzureApplicationActivityEvents = $null
 
-    Out-LogFile "Searching Unified Audit Logs Azure Activities" -Action 
+	Out-LogFile "Project initialised. Ready to pull records!" 
+	
+	if ($null -ne $Records)
+	{
+		[array]$RecordTypes = $Records
+	}
+
+	else
+	{
+		[array]$RecordTypes = (
+			"AeD",
+			"AirInvestigation",
+			"ApplicationAudit",
+			"AzureActiveDirectory",
+			"AzureActiveDirectoryAccountLogon",
+			"AzureActiveDirectoryStsLogon",
+			"Campaign",
+			"ComplianceDLPExchange",
+			"ComplianceDLPSharePoint",
+			"ComplianceDLPSharePointClassification",
+			"ComplianceSupervisionExchange",
+			"CustomerKeyServiceEncryption",
+			"CRM",
+			"DataCenterSecurityCmdlet",
+			"DataGovernance",
+			"DataInsightsRestApiAudit",
+			"Discovery",
+			"DLPEndpoint",	
+			"ExchangeAdmin", 
+			"ExchangeAggregatedOperation", 
+			"ExchangeItem",
+			"ExchangeItemAggregated",
+			"ExchangeItemGroup",
+			"HRSignal",
+			"HygieneEvent",
+			"InformationWorkerProtection",
+			"InformationBarrierPolicyApplication",
+			"Kaizala",
+			"LabelContentExplorer",
+			"MailSubmission",
+			"MicrosoftFlow",
+			"MicrosoftForms",
+			"MicrosoftTeamsAnalytics",
+			"MicrosoftTeams",
+			"MicrosoftTeamsAdmin",
+			"MicrosoftTeamsDevice",
+			"MicrosoftTeamsAddOns",
+			"MicrosoftStream",
+			"MicrosoftTeamsSettingsOperation",
+			"MipAutoLabelSharePointItem",
+			"MipAutoLabelSharePointPolicyLocation",
+			"MIPLabel",
+			"OfficeNative",
+			"OneDrive",
+			"PowerBIAudit",
+			"Project",
+			"PowerAppsApp",
+			"PowerAppsPlan",
+			"Quarantine",
+			"SecurityComplianceAlerts",
+			"SecurityComplianceCenterEOPCmdlet",
+			"SecurityComplianceInsights",
+			"SharePoint",
+			"SharePointCommentOperation",
+			"SharePointContentTypeOperation",
+			"SharePointFileOperation",
+			"SharePointFieldOperation",
+			"SharePointListOperation",
+			"SharePointListItemOperation",
+			"SharePointSharingOperation",
+			"SkypeForBusinessCmdlets",
+			"SkypeForBusinessPSTNUsage",
+			"SkypeForBusinessUsersBlocked",
+			"Sway",
+			"SyntheticProbe",
+			"ThreatFinder",
+			"ThreatIntelligence",
+			"ThreatIntelligenceAtpContent",
+			"ThreatIntelligenceUrl",
+			"TeamsHealthcare",
+			"WorkplaceAnalytics",
+			"Yammer" 
+			)			
+	}
 
 
-    #[array]$RecordTypes = "AeD", "AirInvestigation", "ApplicationAudit", "AzureActiveDirectory", "AzureActiveDirectoryAccountLogon", "AzureActiveDirectoryStsLogon", "Campaign", "ComplianceDLPExchange", "ComplianceDLPSharePoint", "ComplianceDLPSharePointClassification", "ComplianceSupervisionExchange", "CustomerKeyServiceEncryption", "CRM", "DataCenterSecurityCmdlet", "DataGovernance", "DataInsightsRestApiAudit", "Discovery", "DLPEndpoint", "ExchangeAdmin", "ExchangeAggregatedOperation", "ExchangeItem", "ExchangeItemAggregated", "ExchangeItemGroup", "HRSignal", "HygieneEvent", "InformationWorkerProtection", "InformationBarrierPolicyApplication", "Kaizala", "LabelContentExplorer", "MailSubmission", "MicrosoftFlow", "MicrosoftForms", "MicrosoftTeamsAnalytics", "MicrosoftTeams", "MicrosoftTeamsAdmin", "MicrosoftTeamsDevice", "MicrosoftTeamsAddOns", "MicrosoftStream", "MicrosoftTeamsSettingsOperation", "MipAutoLabelSharePointItem", "MipAutoLabelSharePointPolicyLocation", "MIPLabel", "OfficeNative", "OneDrive", "PowerBIAudit", "Project", "PowerAppsApp", "PowerAppsPlan", "Quarantine", "SecurityComplianceAlerts", "SecurityComplianceCenterEOPCmdlet", "SecurityComplianceInsights", "SharePoint", "SharePointCommentOperation", "SharePointContentTypeOperation", "SharePointFileOperation", "SharePointFieldOperation", "SharePointListOperation", "SharePointListItemOperation", "SharePointSharingOperation", "SkypeForBusinessCmdlets", "SkypeForBusinessPSTNUsage", "SkypeForBusinessUsersBlocked", "Sway", "SyntheticProbe", "ThreatFinder", "ThreatIntelligence", "ThreatIntelligenceAtpContent", "ThreatIntelligenceUrl", "TeamsHealthcare", "WorkplaceAnalytics", "Yammer" 
-	[array]$RecordTypes = "SharePointFileOperation"
-
-	foreach ($Type in $RecordTypes) {
-        Out-LogFile ("Searching Unified Audit log for Records of type: " + $Type)
+	foreach ($Type in $RecordTypes)
+	{
+        Out-LogFile ("Searching records of type: " + $Type) -Notice "Action"
 		$AzureApplicationActivityEvents += Get-AllUnifiedAuditLogEntry -UnifiedSearch ("Search-UnifiedAuditLog -RecordType " + $Type)
 
 		# If null we found no changes to nothing to do here
-		if ($null -eq $AzureApplicationActivityEvents){
-			Out-LogFile "No  related events found in the search time frame."
+		if ($null -eq $AzureApplicationActivityEvents)
+		{
+			Out-LogFile "No events found in the search time frame." -Notice "warning"
 		}
 
 		# If not null then we must have found some events so flag them
-		else {
-			Out-LogFile "Activity found." -Notice
-
-			# Go thru each even and prepare it to output to CSV
-			Foreach ($event in $AzureApplicationActivityEvents){
-			
-
-			}
-
-			# Clear variable
-			$AzureApplicationActivityEvents = ''
+		else 
+		{
+			continue
 		}		
 
 	}
 
-
-
+	Out-LogFile "All tasks completed. I hope you catch them!"
 
 }

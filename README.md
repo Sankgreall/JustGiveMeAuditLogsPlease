@@ -70,16 +70,22 @@ filter
         remove_field => ["message"]
     }
 
+    grok 
+    {
+        match => { "clientIP" => "%{IP:validClientIP}" }
+        match => { "ActorIpAddress" => "%{IP:validActorIpAddress}" }
+    }
+
     date
     {
         match => ["CreationTime", "ISO8601"]
     }
 
-    if [ActorIpAddress] and [ActorIpAddress] != ""
+    if [validActorIpAddress]
     {
         geoip
         {
-            source => "ActorIpAddress"
+            source => "validActorIpAddress"
             fields => ["city_name", "country_code2", "country_name", "latitude", "longitude"]
             target => "ActorIP-Location"
         }
@@ -91,10 +97,9 @@ filter
                 "[ActorIP-Location][latitude]" => "[ActorIP-Location][geo][lat]"
                 "[ActorIP-Location][longitude]" => "[ActorIP-Location][geo][lon]"                
             }
+            remove_field => ["ActorIpAddress"]
         }
-
     }
-    
     else
     {
         mutate
@@ -103,11 +108,11 @@ filter
         }   
     }
 
-    if [ClientIP] and [ClientIP] != ""
+    if [validClientIP]
     {
         geoip
         {
-            source => "ClientIP"
+            source => "validClientIP"
             fields => ["city_name", "country_code2", "country_name", "latitude", "longitude"]
             target => "ClientIP-Location"
         }
@@ -119,72 +124,82 @@ filter
                 "[ClientIP-Location][latitude]" => "[ClientIP-Location][geo][lat]"
                 "[ClientIP-Location][longitude]" => "[ClientIP-Location][geo][lon]"                
             }
+            remove_field => ["ClientIP"]
         }
     }
-    
     else
     {
         mutate
         {
-            remove_field => ["ActorIpAddress"]
+            remove_field => ["ClientIP"]
         }   
     }
+
 }
 
 output
 {
     elasticsearch
     {
-        hosts => "{elastisearch-node}"
-        index => "logs-office365-unifiedaudit"
+        hosts => "http://10.0.22.5:9200"
+        index => "hr-logs-office365-test"
+        user => "elastic"
+        password => "HFej66Txq$T&6@5saDh3pPG5wnSWC8!P"
     }
 
 }
+
 ```
 
 If you want to get really serious, you may also want to specify an Index Template:
 
 ```
-  "mappings": {
-    "ActorIPAddress-Location": {
-      "_source": {
-        "excludes": [],
-        "includes": [],
-        "enabled": true
+{
+  "ActorIPAddress-Location": {
+    "_routing": {
+      "required": false
+    },
+    "numeric_detection": false,
+    "_meta": {},
+    "_source": {
+      "excludes": [],
+      "includes": [],
+      "enabled": true
+    },
+    "dynamic": true,
+    "dynamic_templates": [],
+    "date_detection": false,
+    "properties": {
+      "@timestamp": {
+        "type": "date"
       },
-      "_meta": {},
-      "_routing": {
-        "required": false
-      },
-      "dynamic": true,
-      "numeric_detection": false,
-      "date_detection": false,
-      "dynamic_templates": [],
-      "properties": {
-        "@timestamp": {
-          "type": "date"
-        },
-        "ActorIP-Location": {
-          "type": "object",
-          "properties": {
-            "geo": {
-              "type": "geo_point"
-            }
+      "ClientIP-Location": {
+        "type": "object",
+        "properties": {
+          "geo": {
+            "type": "geo_point"
           }
-        },
-        "ClientIP-Location": {
-          "type": "object",
-          "properties": {
-            "geo": {
-              "type": "geo_point"
-            }
-          }
-        },
-        "CreationTime": {
-          "type": "date"
         }
+      },
+      "CreationTime": {
+        "type": "date"
+      },
+      "ActorIpAddress": {
+        "type": "ip"
+      },
+      "ActorIP-Location": {
+        "type": "object",
+        "properties": {
+          "geo": {
+            "type": "geo_point"
+          }
+        }
+      },
+      "ClientIP": {
+        "type": "ip"
       }
     }
   }
+}
 ```
 

@@ -72,7 +72,7 @@ filter
 
     grok 
     {
-        match => { "clientIP" => "%{IP:validClientIP}" }
+        match => { "ClientIP" => "%{IP:validClientIP}" }
         match => { "ActorIpAddress" => "%{IP:validActorIpAddress}" }
     }
 
